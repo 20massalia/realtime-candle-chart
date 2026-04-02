@@ -14,6 +14,7 @@ import { createAggregateState } from "@/lib/market/aggregate";
 import { createGbmState } from "@/lib/market/gbm";
 import { createConsumer } from "@/lib/market/consumer";
 import { createProducer } from "@/lib/market/producer";
+import { intervalMsForSpeed, SPEED_PRESETS } from "@/lib/market/speed";
 import type { Candle, Tick } from "@/lib/market/types";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -45,6 +46,8 @@ export function CandleChart() {
   const setChartReady = useUiStore((s) => s.setChartReady);
   const isPaused = useUiStore((s) => s.isPaused);
   const setPaused = useUiStore((s) => s.setPaused);
+  const speedMultiplier = useUiStore((s) => s.speedMultiplier);
+  const setSpeedMultiplier = useUiStore((s) => s.setSpeedMultiplier);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -94,7 +97,11 @@ export function CandleChart() {
     const producer = createProducer(
       { queueRef, gbmRef, lastTickMsRef },
       {
-        intervalMs: TICK_INTERVAL_MS,
+        getIntervalMs: () =>
+          intervalMsForSpeed(
+            TICK_INTERVAL_MS,
+            useUiStore.getState().speedMultiplier,
+          ),
         params: GBM,
         isPaused: () => useUiStore.getState().isPaused,
       },
@@ -163,6 +170,33 @@ export function CandleChart() {
           className="rounded-md border border-zinc-300 bg-zinc-100 px-3 py-1.5 text-sm text-zinc-900 transition-colors hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
         >
           {isPaused ? "재개" : "일시정지"}
+        </button>
+        <div className="flex items-center gap-1">
+          {SPEED_PRESETS.map((speed) => {
+            const selected = speed === speedMultiplier;
+            return (
+              <button
+                key={speed}
+                type="button"
+                onClick={() => setSpeedMultiplier(speed)}
+                className={`rounded-md border px-2.5 py-1 text-xs transition-colors ${
+                  selected
+                    ? "border-blue-500 bg-blue-500 text-white"
+                    : "border-zinc-300 bg-zinc-100 text-zinc-900 hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+                }`}
+                aria-pressed={selected}
+              >
+                {speed}x
+              </button>
+            );
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={() => chartRef.current?.timeScale().scrollToRealTime()}
+          className="rounded-md border border-zinc-300 bg-zinc-100 px-3 py-1.5 text-sm text-zinc-900 transition-colors hover:bg-zinc-200 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100 dark:hover:bg-zinc-700"
+        >
+          Realtime 이동
         </button>
         <span className="text-sm text-zinc-500 dark:text-zinc-400">
           Mock GBM · 1m 캔들 · RAF 소비

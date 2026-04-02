@@ -9,7 +9,7 @@ type ProducerRefs = {
 };
 
 type ProducerOptions = {
-  intervalMs: number;
+  getIntervalMs(): number;
   params: GbmParams;
   /** Called each tick to check whether production is paused. */
   isPaused(): boolean;
@@ -25,27 +25,41 @@ export function createProducer(
   refs: ProducerRefs,
   opts: ProducerOptions,
 ): ProducerHandle {
-  let intervalId: ReturnType<typeof setInterval> | undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let active = false;
+
+  const schedule = () => {
+    if (!active) return;
+    const intervalMs = opts.getIntervalMs();
+    timeoutId = setTimeout(tickOnce, intervalMs);
+  };
+
+  const tickOnce = () => {
+    if (!active) return;
+    if (!document.hidden && !opts.isPaused()) {
+      const now = Date.now();
+      const intervalMs = opts.getIntervalMs();
+      const prev = refs.lastTickMsRef.current ?? now - intervalMs;
+      refs.lastTickMsRef.current = now;
+      const dt = (now - prev) / 1000;
+      const { state, tick } = stepGbm(refs.gbmRef.current, now, dt, opts.params);
+      refs.gbmRef.current = state;
+      refs.queueRef.current.push(tick);
+    }
+    schedule();
+  };
 
   return {
     start() {
-      if (intervalId !== undefined) return;
-      intervalId = setInterval(() => {
-        if (document.hidden) return;
-        if (opts.isPaused()) return;
-        const now = Date.now();
-        const prev = refs.lastTickMsRef.current ?? now - opts.intervalMs;
-        refs.lastTickMsRef.current = now;
-        const dt = (now - prev) / 1000;
-        const { state, tick } = stepGbm(refs.gbmRef.current, now, dt, opts.params);
-        refs.gbmRef.current = state;
-        refs.queueRef.current.push(tick);
-      }, opts.intervalMs);
+      if (active) return;
+      active = true;
+      schedule();
     },
     stop() {
-      if (intervalId !== undefined) {
-        clearInterval(intervalId);
-        intervalId = undefined;
+      active = false;
+      if (timeoutId !== undefined) {
+        clearTimeout(timeoutId);
+        timeoutId = undefined;
       }
     },
   };
