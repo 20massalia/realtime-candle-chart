@@ -1,0 +1,112 @@
+---
+description: Git workflow and approval-first commit policy
+globs: **/*
+---
+
+# Git workflow
+
+## Core policy
+
+- Never run `git commit`, `git push`, `git merge`, `git rebase`, `git tag`, or `gh pr create` unless the user explicitly asks for that exact action.
+- Never assume approval to commit just because implementation is complete.
+- Treat all code changes as unapproved until the user explicitly says they have reviewed and approved them.
+- Prefer stopping after implementation and review support, not after repository mutation.
+
+## After every task
+
+When a task is complete, stop and provide a concise handoff with:
+
+1. Summary of what changed
+2. Files changed
+3. Risks, assumptions, or tradeoffs
+4. Exact things the user should review
+5. Suggested verification steps or commands
+6. One suggested Conventional Commit message
+
+## Commit message language
+
+- All suggested commit messages must be written in Korean.
+- Keep the Conventional Commits prefix in English, but write the description in Korean.
+- Scope may be written in English or Korean, but prefer short and clear scopes.
+- Keep code entities, filenames, library names, API names, and technical keywords in English when translating them would reduce clarity.
+
+## Commit message policy
+
+When suggesting commit messages:
+
+- Use Conventional Commits
+- Keep the subject line short and specific
+- Scope is preferred when helpful
+- Describe the actual change, not vague intent
+- Use Korean verb endings such as `추가`, `구현`, `수정`, `개선`, `분리`, `적용`, `제거`, `리팩토링`
+
+Examples:
+
+- `chore(프로젝트): 저장소 초기화 및 개발 워크플로 설정`
+- `docs(명세): Phase 1 요구사항 문서화`
+- `feat(mock): GBM 틱 생성기 구현`
+- `feat(chart): 클라이언트 전용 캔들 차트 컴포넌트 추가`
+- `feat(집계): 1분 OHLC 집계 로직 구현`
+- `feat(렌더링): RAF 큐 소비자 연결`
+- `fix(chart): SSR 관련 초기화 오류 수정`
+- `refactor(queue): 틱 버퍼 처리 구조 리팩토링`
+- `test(집계): 분 경계 케이스 테스트 추가`
+
+## Scope control
+
+- Do not bundle unrelated changes into one task.
+- If unrelated issues are noticed, mention them separately instead of fixing them unless the user asks.
+- Prefer small, reviewable diffs.
+
+## Review-first behavior
+
+Before any commit is even suggested as ready:
+
+- Confirm whether the task goal appears met
+- Call out any incomplete parts
+- Mention missing tests, missing edge cases, or follow-up tasks
+- If confidence is low, say so clearly
+
+## If the user asks to commit
+
+If and only if the user explicitly asks to commit:
+
+- First summarize the exact files that will be committed
+- Provide the proposed commit message in Korean
+- Ask for confirmation if the request is ambiguous
+- Do not push unless the user explicitly asks to push
+
+## If the user asks to push
+
+If and only if the user explicitly asks to push:
+
+- State which branch will be pushed
+- Mention any obvious risk if the branch name or remote is unclear
+- Do not create PRs, tags, or releases unless explicitly requested
+
+## Safety rules
+
+- Never rewrite git history unless explicitly requested
+- Never force push unless explicitly requested
+- Never delete branches unless explicitly requested
+- Never commit secrets, env files, tokens, or generated noise
+- If lockfiles or generated files changed, mention them explicitly in the handoff
+
+## Preferred ending format
+
+End task responses with this structure:
+
+- Changed files:
+- What changed:
+- What to review:
+- Verification:
+- Suggested commit message:
+
+## Project-specific preference
+
+For this repository:
+
+- The assistant should implement and stop before commit
+- The human user performs final review and approval
+- Git operations are opt-in, never assumed
+- Suggested commit messages must be written in Korean
