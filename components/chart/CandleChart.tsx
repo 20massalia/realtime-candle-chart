@@ -10,8 +10,10 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
-import { applyTick, createAggregateState } from "@/lib/market/aggregate";
-import { createGbmState, stepGbm } from "@/lib/market/gbm";
+import { createAggregateState } from "@/lib/market/aggregate";
+import { createGbmState } from "@/lib/market/gbm";
+import { createConsumer } from "@/lib/market/consumer";
+import { createProducer } from "@/lib/market/producer";
 import type { Candle, Tick } from "@/lib/market/types";
 import { useUiStore } from "@/stores/ui-store";
 
@@ -53,10 +55,6 @@ export function CandleChart() {
     aggRef.current = createAggregateState();
     lastTickMsRef.current = null;
 
-    let rafId = 0;
-    let intervalId: ReturnType<typeof setInterval> | undefined;
-    let active = true;
-
     const chart = createChart(el, {
       layout: {
         background: { type: ColorType.Solid, color: "transparent" },
@@ -93,68 +91,40 @@ export function CandleChart() {
     ro.observe(el);
     resize();
 
-    const drainAndUpdate = () => {
-      const ser = seriesRef.current;
-      if (!ser) return;
-      const q = queueRef.current;
-      let agg = aggRef.current;
-      while (q.length > 0) {
-        const tick = q.shift()!;
-        const { state, effects } = applyTick(agg, tick);
-        agg = state;
-        for (const eff of effects) {
+    const producer = createProducer(
+      { queueRef, gbmRef, lastTickMsRef },
+      {
+        intervalMs: TICK_INTERVAL_MS,
+        params: GBM,
+        isPaused: () => useUiStore.getState().isPaused,
+      },
+    );
+
+    const consumer = createConsumer(
+      { queueRef, aggRef },
+      {
+        onEffect(eff) {
+          const ser = seriesRef.current;
+          if (!ser) return;
           if (eff.type === "update") {
             ser.update(lwcBar(eff.candle));
           } else {
             ser.update(lwcBar(eff.completed));
             ser.update(lwcBar(eff.candle));
           }
-        }
-      }
-      aggRef.current = agg;
-    };
-
-    const loop = () => {
-      if (!active) return;
-      if (!document.hidden) {
-        drainAndUpdate();
-      }
-      rafId = requestAnimationFrame(loop);
-    };
-
-    const stopProducer = () => {
-      if (intervalId !== undefined) {
-        clearInterval(intervalId);
-        intervalId = undefined;
-      }
-    };
-
-    const startProducer = () => {
-      if (intervalId !== undefined) return;
-      intervalId = setInterval(() => {
-        if (document.hidden) return;
-        if (useUiStore.getState().isPaused) return;
-        const now = Date.now();
-        const prev = lastTickMsRef.current ?? now - TICK_INTERVAL_MS;
-        lastTickMsRef.current = now;
-        const dt = (now - prev) / 1000;
-        const { state, tick } = stepGbm(gbmRef.current, now, dt, GBM);
-        gbmRef.current = state;
-        queueRef.current.push(tick);
-      }, TICK_INTERVAL_MS);
-    };
+        },
+      },
+    );
 
     const pauseAll = () => {
-      active = false;
-      stopProducer();
-      cancelAnimationFrame(rafId);
+      producer.stop();
+      consumer.stop();
     };
 
     const resumeAll = () => {
-      active = true;
       lastTickMsRef.current = null;
-      startProducer();
-      rafId = requestAnimationFrame(loop);
+      producer.start();
+      consumer.start();
     };
 
     const onVisibility = () => {
@@ -166,8 +136,8 @@ export function CandleChart() {
     };
 
     document.addEventListener("visibilitychange", onVisibility);
-    startProducer();
-    rafId = requestAnimationFrame(loop);
+    producer.start();
+    consumer.start();
 
     return () => {
       pauseAll();
