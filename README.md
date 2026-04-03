@@ -105,7 +105,7 @@ pnpm exec playwright test # Playwright E2E 테스트
 
 ## 데모 스크린샷
 
-![Realtime Candle Chart Demo](chart-full.png)
+![Realtime Candle Chart Demo](public/chart-full.png)
 (위 이미지는 Phase 1 실시간 캔들 차트 동작 화면의 예시입니다.)
 
 ---
