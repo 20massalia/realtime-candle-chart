@@ -56,12 +56,13 @@ graph LR
 
 ## 기술 스택 (Tech Stack)
 
-- Framework: Next.js 15+ (App Router)
+- Framework: Next.js 16.2.2 (App Router)
 - Chart Library: Lightweight Charts
 - State Management: Zustand (UI 상태 관리용)
-- Streaming: Recursive setTimeout + Queue + RAF
+- Streaming: GBM Producer + Queue + RAF Consumer
 - Testing: Vitest (Unit), Playwright (E2E)
 - Package Manager: pnpm
+- Runtime: Node.js 20+
 
 ---
 
@@ -70,7 +71,7 @@ graph LR
 ### 설치 및 실행
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/20massalia/realtime-candle-chart
 cd realtime-candle-chart
 pnpm install
 pnpm dev
@@ -80,7 +81,8 @@ pnpm dev
 
 ```bash
 pnpm test # Vitest 단위 테스트
-pnpm exec playwright test # Playwright E2E 테스트
+pnpm test:e2e # Playwright E2E 테스트
+pnpm typecheck # TypeScript 타입 체크
 ```
 
 ---
@@ -99,6 +101,8 @@ pnpm exec playwright test # Playwright E2E 테스트
 ### 관련 문서
 
 - docs/spec-phase1.md: 세부 구현 명세
+- vitest.config.ts: 단위 테스트 실행 설정
+- playwright.config.ts: E2E 테스트 실행 설정
 - .cursor/rules/: 에이전트 동작 및 Git 워크플로 규칙
 
 ---

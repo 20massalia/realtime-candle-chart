@@ -93,7 +93,7 @@ test.describe("Phase 1 chart UX and formatting", () => {
         moveBox.y + moveBox.height / 2,
         { steps: 2 },
       );
-      widths.push(await tip.evaluate((el) => el.offsetWidth));
+      widths.push(await tip.evaluate((el) => (el as HTMLElement).offsetWidth));
     }
     const positive = widths.filter((w) => w > 0);
     expect(new Set(positive).size).toBe(1);

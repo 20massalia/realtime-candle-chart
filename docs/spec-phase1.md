@@ -1,4 +1,10 @@
-# Stock Candle Visualization - Phase 1: Mocking
+# Stock Candle Visualization - Phase 1: Mocking (Complete)
+
+## Status
+
+- Phase: Complete
+- Scope: GBM mock stream + RAF queue consumer + 1m OHLC live rendering
+- Validation: Unit tests(Vitest) and E2E tests(Playwright) configured
 
 ## Tech Stack
 

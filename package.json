@@ -1,12 +1,18 @@
 {
   "name": "realtime-candle-chart",
   "version": "0.1.0",
+  "description": "Phase 1 complete realtime candle chart with GBM mock ticks and RAF-driven OHLC rendering.",
   "private": true,
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
