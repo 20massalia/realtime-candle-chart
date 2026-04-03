@@ -9,7 +9,9 @@ test.describe("chart controls", () => {
     ).toBeVisible();
 
     for (const label of ["0.5x", "1x", "2x", "5x"]) {
-      await expect(page.getByRole("button", { name: label })).toBeVisible();
+      await expect(
+        page.getByRole("button", { name: label, exact: true }),
+      ).toBeVisible();
     }
     await expect(
       page.getByRole("button", { name: "Realtime 이동" }),

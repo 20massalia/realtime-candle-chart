@@ -13,5 +13,6 @@ export default defineConfig({
     // Pure market logic: no DOM needed.
     // Add `environment: 'jsdom'` per-file when component tests are added.
     environment: "node",
+    include: ["__tests__/**/*.test.ts"],
   },
 });
