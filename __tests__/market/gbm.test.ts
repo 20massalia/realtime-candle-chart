@@ -11,6 +11,13 @@ describe("createGbmState", () => {
     expect(createGbmState(1000).price).toBe(1000);
     expect(createGbmState(0.001).price).toBe(0.001);
   });
+
+  it("uses the Phase 1 chart baseline (~₩75,000) as a realistic positive mid price", () => {
+    const s = createGbmState(75_000);
+    expect(s.price).toBe(75_000);
+    expect(Number.isFinite(s.price)).toBe(true);
+    expect(s.price).toBeGreaterThan(1000);
+  });
 });
 
 // ─── stepGbm ─────────────────────────────────────────────────────────────────

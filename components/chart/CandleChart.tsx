@@ -11,6 +11,13 @@ import {
   type UTCTimestamp,
 } from "lightweight-charts";
 import { useEffect, useRef } from "react";
+import { buildCandleTooltipInnerHtml } from "@/lib/chart/candle-tooltip-html";
+import { formatAxisTimeLabel, formatKrw } from "@/lib/chart/formatters";
+import {
+  computeTooltipPosition,
+  readTooltipSizeOnce,
+  type TooltipSizeCache,
+} from "@/lib/chart/tooltip-layout";
 import { createAggregateState } from "@/lib/market/aggregate";
 import { createGbmState } from "@/lib/market/gbm";
 import { createConsumer } from "@/lib/market/consumer";
@@ -26,43 +33,6 @@ const GBM = { mu: 0, sigma: 0.03 } as const;
 const TICK_INTERVAL_MS = 300;
 /** Realistic KRW mid-cap baseline (~₩75,000). GBM relative movements stay intact. */
 const INITIAL_PRICE = 75_000;
-
-// ── Formatting helpers ────────────────────────────────────────────────────────
-
-const krwFormatter = new Intl.NumberFormat("ko-KR", {
-  style: "currency",
-  currency: "KRW",
-  maximumFractionDigits: 0,
-});
-
-function formatKrw(price: number): string {
-  return krwFormatter.format(Math.round(price));
-}
-
-/** Bottom axis tick label: "03-11:37" (일-시:분) */
-function formatTickLabel(time: Time): string {
-  const d = new Date((time as number) * 1000);
-  const day = String(d.getDate()).padStart(2, "0");
-  const hh = String(d.getHours()).padStart(2, "0");
-  const mm = String(d.getMinutes()).padStart(2, "0");
-  return `${day}-${hh}:${mm}`;
-}
-
-const koreanDtFmt = new Intl.DateTimeFormat("ko-KR", {
-  year: "numeric",
-  month: "2-digit",
-  day: "2-digit",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false,
-});
-
-/** Tooltip datetime: "2026. 04. 03. 11:37" */
-function formatKoreanDateTime(timeSeconds: number): string {
-  return koreanDtFmt.format(new Date(timeSeconds * 1000));
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 function lwcBar(c: Candle) {
   return {
@@ -109,7 +79,7 @@ export function CandleChart() {
       rightPriceScale: { borderVisible: false },
       timeScale: {
         borderVisible: false,
-        tickMarkFormatter: formatTickLabel,
+        tickMarkFormatter: formatAxisTimeLabel,
         // Pixel-based right margin (40px) stays visually stable across zoom levels
         // (bar-count rightOffset would shrink as bars get denser).
         rightOffsetPixels: 40,
@@ -145,6 +115,7 @@ export function CandleChart() {
     el.style.position = "relative";
 
     const tooltip = document.createElement("div");
+    tooltip.dataset.testid = "chart-tooltip";
     tooltip.style.cssText = [
       "position:absolute",
       "top:0",
@@ -163,11 +134,7 @@ export function CandleChart() {
     ].join(";");
     el.appendChild(tooltip);
 
-    // Cache tooltip dimensions after the first measurement.
-    // Content is always 3 lines of KRW-formatted numbers with white-space:nowrap,
-    // so the rendered size is effectively stable across crosshair events.
-    let cachedTtW = 0;
-    let cachedTtH = 0;
+    const tooltipSizeCache: TooltipSizeCache = { width: 0, height: 0 };
 
     const handleCrosshair = (param: MouseEventParams) => {
       if (!param.time || !param.point) {
@@ -186,32 +153,26 @@ export function CandleChart() {
         close: number;
       };
 
-      const timeStr = formatKoreanDateTime(param.time as number);
-      tooltip.innerHTML =
-        `<div style="margin-bottom:2px;color:#a1a1aa;font-size:11px;">${timeStr}</div>` +
-        `<div>시가&nbsp;<b>${formatKrw(open)}</b>&ensp;고가&nbsp;<b style="color:#22c55e;">${formatKrw(high)}</b></div>` +
-        `<div>저가&nbsp;<b style="color:#ef4444;">${formatKrw(low)}</b>&ensp;종가&nbsp;<b>${formatKrw(close)}</b></div>`;
+      tooltip.innerHTML = buildCandleTooltipInnerHtml(param.time as number, {
+        open,
+        high,
+        low,
+        close,
+      });
 
       tooltip.style.display = "block";
-      // Read layout only on the first show; reuse the cached size afterwards.
-      if (!cachedTtW) {
-        cachedTtW = tooltip.offsetWidth;
-        cachedTtH = tooltip.offsetHeight;
-      }
-      const elW = el.clientWidth;
-      const elH = el.clientHeight;
-      const ttW = cachedTtW;
-      const ttH = cachedTtH;
-      const x = param.point.x;
-      const y = param.point.y;
-
-      let left = x + 16;
-      if (left + ttW > elW - 4) left = x - ttW - 16;
-      left = Math.max(4, left);
-
-      let top = y - ttH / 2;
-      top = Math.max(4, Math.min(top, elH - ttH - 4));
-
+      const { width: ttW, height: ttH } = readTooltipSizeOnce(
+        tooltipSizeCache,
+        () => ({ width: tooltip.offsetWidth, height: tooltip.offsetHeight }),
+      );
+      const { left, top } = computeTooltipPosition({
+        containerWidth: el.clientWidth,
+        containerHeight: el.clientHeight,
+        pointerX: param.point.x,
+        pointerY: param.point.y,
+        tooltipWidth: ttW,
+        tooltipHeight: ttH,
+      });
       tooltip.style.left = `${left}px`;
       tooltip.style.top = `${top}px`;
     };
@@ -304,6 +265,7 @@ export function CandleChart() {
     <div className="flex w-full flex-col gap-3">
       <div
         ref={containerRef}
+        data-testid="chart-canvas-host"
         className="h-[min(70vh,560px)] w-full min-h-[320px]"
       />
       <div className="flex items-center gap-2">
