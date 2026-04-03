@@ -110,7 +110,7 @@ export function CandleChart() {
       timeScale: {
         borderVisible: false,
         tickMarkFormatter: formatTickLabel,
-        // Pixel-based right margin stays visually stable across zoom levels
+        // Pixel-based right margin (40px) stays visually stable across zoom levels
         // (bar-count rightOffset would shrink as bars get denser).
         rightOffsetPixels: 40,
         // Prevents the single first bar from stretching to fill the whole chart.
@@ -163,6 +163,12 @@ export function CandleChart() {
     ].join(";");
     el.appendChild(tooltip);
 
+    // Cache tooltip dimensions after the first measurement.
+    // Content is always 3 lines of KRW-formatted numbers with white-space:nowrap,
+    // so the rendered size is effectively stable across crosshair events.
+    let cachedTtW = 0;
+    let cachedTtH = 0;
+
     const handleCrosshair = (param: MouseEventParams) => {
       if (!param.time || !param.point) {
         tooltip.style.display = "none";
@@ -187,10 +193,15 @@ export function CandleChart() {
         `<div>저가&nbsp;<b style="color:#ef4444;">${formatKrw(low)}</b>&ensp;종가&nbsp;<b>${formatKrw(close)}</b></div>`;
 
       tooltip.style.display = "block";
+      // Read layout only on the first show; reuse the cached size afterwards.
+      if (!cachedTtW) {
+        cachedTtW = tooltip.offsetWidth;
+        cachedTtH = tooltip.offsetHeight;
+      }
       const elW = el.clientWidth;
       const elH = el.clientHeight;
-      const ttW = tooltip.offsetWidth;
-      const ttH = tooltip.offsetHeight;
+      const ttW = cachedTtW;
+      const ttH = cachedTtH;
       const x = param.point.x;
       const y = param.point.y;
 
@@ -282,6 +293,7 @@ export function CandleChart() {
       ro.disconnect();
       chart.remove();
       tooltip.remove();
+      el.style.position = ""; // restore: was set to "relative" for tooltip coordinate system
       chartRef.current = null;
       seriesRef.current = null;
       setChartReady(false);
