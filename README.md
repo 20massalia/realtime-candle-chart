@@ -36,12 +36,11 @@ Phase 1에서는 GBM(기하 브라운 운동) 기반 틱 스트림 생성, RAF(R
 
 ```mermaid
 graph LR
-  Producer[GBM Producer RAF + TICK_INTERVAL]
-  --> Queue[RAF Queue drainToZero()]
-  --> Consumer[Chart Consumer requestAnimationFrame]
-  --> CandleChart[Custom KRW OHLC Tooltip]
+  Producer["GBM Producer (RAF + TICK_INTERVAL)"] --> Queue["RAF Queue (drainToZero)"]
+  Queue --> Consumer["Chart Consumer (requestAnimationFrame)"]
+  Consumer --> CandleChart["Custom KRW OHLC Tooltip"]
 
-  UI[Speed/GoRealtime Pause/Resume] --> Producer
+  UI["Speed/GoRealtime Pause/Resume"] --> Producer
   TabVisibility --> Producer
 ```
 
