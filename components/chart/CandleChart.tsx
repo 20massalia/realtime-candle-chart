@@ -110,12 +110,16 @@ export function CandleChart() {
       timeScale: {
         borderVisible: false,
         tickMarkFormatter: formatTickLabel,
-        // rightOffset: keeps the latest bar away from the price scale so the
-        // tick label isn't clipped behind it on the first few candles.
-        rightOffset: 5,
-        // maxBarSpacing: prevents a single bar from stretching across the whole
-        // chart width when only one candle exists.
+        // Pixel-based right margin stays visually stable across zoom levels
+        // (bar-count rightOffset would shrink as bars get denser).
+        rightOffsetPixels: 40,
+        // Prevents the single first bar from stretching to fill the whole chart.
         maxBarSpacing: 20,
+      },
+      // Hide the built-in crosshair time-scale bubble: our custom tooltip
+      // already shows the full date/time, so the bubble is redundant noise.
+      crosshair: {
+        vertLine: { labelVisible: false },
       },
       localization: {
         priceFormatter: formatKrw,
