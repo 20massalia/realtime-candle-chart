@@ -6,6 +6,7 @@ import {
   createChart,
   type IChartApi,
   type ISeriesApi,
+  type MouseEventParams,
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
@@ -23,7 +24,45 @@ type CandleSeriesApi = ISeriesApi<"Candlestick", Time>;
 /** Mock (√s) vol; ~300ms steps → σ√dt ≈ 0.03·0.55 ≈ 1.6% typical |Δlog S|. */
 const GBM = { mu: 0, sigma: 0.03 } as const;
 const TICK_INTERVAL_MS = 300;
-const INITIAL_PRICE = 100;
+/** Realistic KRW mid-cap baseline (~₩75,000). GBM relative movements stay intact. */
+const INITIAL_PRICE = 75_000;
+
+// ── Formatting helpers ────────────────────────────────────────────────────────
+
+const krwFormatter = new Intl.NumberFormat("ko-KR", {
+  style: "currency",
+  currency: "KRW",
+  maximumFractionDigits: 0,
+});
+
+function formatKrw(price: number): string {
+  return krwFormatter.format(Math.round(price));
+}
+
+/** Bottom axis tick label: "03-11:37" (일-시:분) */
+function formatTickLabel(time: Time): string {
+  const d = new Date((time as number) * 1000);
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${day}-${hh}:${mm}`;
+}
+
+const koreanDtFmt = new Intl.DateTimeFormat("ko-KR", {
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
+});
+
+/** Tooltip datetime: "2026. 04. 03. 11:37" */
+function formatKoreanDateTime(timeSeconds: number): string {
+  return koreanDtFmt.format(new Date(timeSeconds * 1000));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function lwcBar(c: Candle) {
   return {
@@ -68,7 +107,19 @@ export function CandleChart() {
         horzLines: { color: "rgba(161, 161, 170, 0.2)" },
       },
       rightPriceScale: { borderVisible: false },
-      timeScale: { borderVisible: false },
+      timeScale: {
+        borderVisible: false,
+        tickMarkFormatter: formatTickLabel,
+        // rightOffset: keeps the latest bar away from the price scale so the
+        // tick label isn't clipped behind it on the first few candles.
+        rightOffset: 5,
+        // maxBarSpacing: prevents a single bar from stretching across the whole
+        // chart width when only one candle exists.
+        maxBarSpacing: 20,
+      },
+      localization: {
+        priceFormatter: formatKrw,
+      },
     });
 
     const series = chart.addSeries(CandlestickSeries, {
@@ -77,7 +128,81 @@ export function CandleChart() {
       borderVisible: false,
       wickUpColor: "#22c55e",
       wickDownColor: "#ef4444",
+      priceFormat: {
+        type: "custom",
+        formatter: formatKrw,
+        minMove: 1,
+      },
     });
+
+    // ── Custom tooltip (crosshairMove) ──────────────────────────────────────
+    // position:relative is required so the tooltip's absolute coords are
+    // relative to el, matching the param.point coordinate system.
+    el.style.position = "relative";
+
+    const tooltip = document.createElement("div");
+    tooltip.style.cssText = [
+      "position:absolute",
+      "top:0",
+      "left:0",
+      "display:none",
+      "pointer-events:none",
+      "z-index:10",
+      "background:rgba(24,24,27,0.88)",
+      "border:1px solid rgba(161,161,170,0.3)",
+      "border-radius:6px",
+      "padding:7px 10px",
+      "font-size:12px",
+      "line-height:1.7",
+      "color:#e4e4e7",
+      "white-space:nowrap",
+    ].join(";");
+    el.appendChild(tooltip);
+
+    const handleCrosshair = (param: MouseEventParams) => {
+      if (!param.time || !param.point) {
+        tooltip.style.display = "none";
+        return;
+      }
+      const raw = param.seriesData.get(series);
+      if (!raw || !("open" in raw)) {
+        tooltip.style.display = "none";
+        return;
+      }
+      const { open, high, low, close } = raw as {
+        open: number;
+        high: number;
+        low: number;
+        close: number;
+      };
+
+      const timeStr = formatKoreanDateTime(param.time as number);
+      tooltip.innerHTML =
+        `<div style="margin-bottom:2px;color:#a1a1aa;font-size:11px;">${timeStr}</div>` +
+        `<div>시가&nbsp;<b>${formatKrw(open)}</b>&ensp;고가&nbsp;<b style="color:#22c55e;">${formatKrw(high)}</b></div>` +
+        `<div>저가&nbsp;<b style="color:#ef4444;">${formatKrw(low)}</b>&ensp;종가&nbsp;<b>${formatKrw(close)}</b></div>`;
+
+      tooltip.style.display = "block";
+      const elW = el.clientWidth;
+      const elH = el.clientHeight;
+      const ttW = tooltip.offsetWidth;
+      const ttH = tooltip.offsetHeight;
+      const x = param.point.x;
+      const y = param.point.y;
+
+      let left = x + 16;
+      if (left + ttW > elW - 4) left = x - ttW - 16;
+      left = Math.max(4, left);
+
+      let top = y - ttH / 2;
+      top = Math.max(4, Math.min(top, elH - ttH - 4));
+
+      tooltip.style.left = `${left}px`;
+      tooltip.style.top = `${top}px`;
+    };
+
+    chart.subscribeCrosshairMove(handleCrosshair);
+    // ────────────────────────────────────────────────────────────────────────
 
     chartRef.current = chart;
     seriesRef.current = series;
@@ -148,9 +273,11 @@ export function CandleChart() {
 
     return () => {
       pauseAll();
+      chart.unsubscribeCrosshairMove(handleCrosshair);
       document.removeEventListener("visibilitychange", onVisibility);
       ro.disconnect();
       chart.remove();
+      tooltip.remove();
       chartRef.current = null;
       seriesRef.current = null;
       setChartReady(false);
