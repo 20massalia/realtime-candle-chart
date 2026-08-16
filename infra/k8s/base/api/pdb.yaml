@@ -1,0 +1,14 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: api
+  labels:
+    app.kubernetes.io/name: candle-api
+    app.kubernetes.io/component: api
+    app.kubernetes.io/version: "0.0.1"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: candle-api
+      app.kubernetes.io/component: api
