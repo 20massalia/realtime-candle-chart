@@ -33,9 +33,17 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 
+# local k8s overlay secrets (use postgres.env.example)
+infra/k8s/**/postgres.env
+
 # vercel
 .vercel
 
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# backend
+backend/.gradle/
+backend/build/
+backend/bin/

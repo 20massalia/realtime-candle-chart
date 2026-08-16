@@ -1,0 +1,6 @@
+-- Rollback: DELETE FROM candle WHERE symbol = 'AAPL' AND interval = '1m';
+INSERT INTO candle (symbol, interval, bucket_start, open, high, low, close, volume)
+VALUES
+    ('AAPL', '1m', '2026-08-14T14:30:00Z', 190.10000000, 190.50000000, 190.00000000, 190.25000000, 1000),
+    ('AAPL', '1m', '2026-08-14T14:31:00Z', 190.25000000, 190.80000000, 190.20000000, 190.70000000, 1100),
+    ('AAPL', '1m', '2026-08-14T14:32:00Z', 190.70000000, 191.00000000, 190.65000000, 190.90000000, 900);
