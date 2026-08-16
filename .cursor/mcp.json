@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "postgres": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@yawlabs/postgres-mcp@0.10.0"],
+      "envFile": "${workspaceFolder}/.env.mcp"
+    },
+    "kubernetes": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "mcp-server-kubernetes@4.1.4"],
+      "envFile": "${workspaceFolder}/.env.mcp",
+      "env": {
+        "ALLOW_ONLY_READONLY_TOOLS": "true"
+      }
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "next-devtools": {
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "next-devtools-mcp@latest"]
+    }
+  }
+}

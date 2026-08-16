@@ -1,0 +1,47 @@
+---
+description: Spring Boot layering, DTO, error handling, and testing conventions for the backend service
+globs: backend/**/*.java,backend/**/*.kt,backend/**/*.gradle,backend/**/*.gradle.kts,backend/src/main/resources/application*.yml
+alwaysApply: false
+---
+
+# Backend (Spring Boot)
+
+## Layering
+
+`controller` → `service` → `repository`. One direction only.
+
+- Controllers: HTTP mapping, DTO in/out, validation. No business logic, no repository access, no entities in signatures.
+- Services: business rules and transaction boundaries (`@Transactional`, `readOnly = true` for queries).
+- Repositories: persistence only. Custom queries via Spring Data derived methods or explicit `@Query`.
+- Constructor injection only — no field `@Autowired`, no `@Value` on fields.
+
+## API surface
+
+- Versioned paths: `/api/v1/...`. Plural nouns, no verbs in paths.
+- Request and response bodies are `record` DTOs with a `Request`/`Response` suffix. Never expose a JPA entity through the web layer.
+- Validate with `@Valid` plus Jakarta constraints on the request record.
+- The path, status codes, and schema must match `docs/specs/api/*.openapi.yaml`. Change the contract first, then the code.
+
+```java
+@GetMapping("/api/v1/candles")
+CandleListResponse list(@Valid @ModelAttribute CandleQueryRequest request) { ... }
+```
+
+## Errors
+
+- One `@RestControllerAdvice` maps exceptions to a single error shape (`code`, `message`, `traceId`).
+- Throw domain exceptions from services; never return `null` to signal failure and never leak stack traces or SQL in a response.
+- 4xx for caller mistakes, 5xx only for genuine server faults.
+
+## Configuration
+
+- Typed `@ConfigurationProperties` records over scattered `@Value`.
+- Profiles: `application.yml` for shared config, `application-{local,dev,prod}.yml` for overrides.
+- Secrets and connection strings come from environment variables injected by Kubernetes. Never commit a credential.
+
+## Testing
+
+- Unit test services with plain JUnit 5 plus Mockito — no Spring context.
+- Test the web layer with `@WebMvcTest` and the persistence layer against real PostgreSQL via Testcontainers, not H2 (dialect drift hides bugs).
+- Every bug fix starts with a failing test that reproduces it.
+- Verify with `cd backend && ./gradlew test` before reporting done.

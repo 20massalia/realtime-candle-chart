@@ -1,0 +1,51 @@
+---
+description: Kubernetes manifest, Helm chart, and cluster-operation rules including required workload fields and approval boundaries
+globs: infra/**/*.yaml,infra/**/*.yml,infra/**/*.tpl,infra/helm/**/values*.yaml,**/Chart.yaml,docs/specs/k8s/**/*.md
+alwaysApply: false
+---
+
+# Infrastructure (Kubernetes + Helm)
+
+## Structure
+
+- `infra/k8s/base/` holds environment-agnostic manifests; `infra/k8s/overlays/{dev,prod}/` holds Kustomize patches.
+- Helm charts live in `infra/helm/<chart>/`. Every environment value belongs in `values-{env}.yaml`, never inside a template default that hides prod behavior.
+- One workload per directory, named after the service (`web` for Next.js, `api` for Spring Boot).
+
+## Required on every workload
+
+Reject a manifest that is missing any of these:
+
+- `resources.requests` and `resources.limits` for CPU and memory.
+- `readinessProbe` and `livenessProbe` on a real endpoint — Spring Boot uses `/actuator/health/readiness` and `/actuator/health/liveness`; Next.js needs a dedicated lightweight route.
+- Immutable image reference: a digest or a release tag. `:latest` is never acceptable.
+- `securityContext` with `runAsNonRoot: true`, `allowPrivilegeEscalation: false`, `readOnlyRootFilesystem: true` where feasible.
+- Labels `app.kubernetes.io/name`, `app.kubernetes.io/component`, `app.kubernetes.io/version`.
+- `RollingUpdate` strategy with `maxUnavailable: 0` for user-facing services, plus a `PodDisruptionBudget`.
+
+## Configuration and secrets
+
+- Non-sensitive config in a `ConfigMap`, consumed as env vars via `envFrom`.
+- Secrets come from a `Secret` populated by an external store (External Secrets, Sealed Secrets, cloud secret manager). Never a literal value or a base64 blob in git.
+- Database credentials are injected as env vars matching the Spring Boot property names; the connection string never appears in a manifest.
+
+## Frontend/backend split
+
+- Next.js and Spring Boot are separate Deployments and Services, scaled independently.
+- The browser reaches the API through Ingress path routing or a Next.js Route Handler — the Spring Boot Service is not exposed publicly unless the spec says so.
+- Server-side Next.js calls the backend via the in-cluster DNS name (`http://api.<namespace>.svc.cluster.local:8080`).
+
+## Validation before anything else
+
+```bash
+kustomize build infra/k8s/overlays/<env> | kubeconform -strict -summary -
+helm lint infra/helm/<chart>
+helm template <release> infra/helm/<chart> -f infra/helm/<chart>/values-<env>.yaml | kubeconform -strict -
+```
+
+## Cluster operations
+
+- Read-only inspection through the `kubernetes` MCP server (get, describe, logs, events) is always allowed and is the preferred way to diagnose a failing rollout.
+- Mutating operations — `apply`, `delete`, `scale`, `rollout restart`, `exec` — require explicit user approval per action. Propose the exact command and wait.
+- Never touch a production context without the user naming it. Confirm the current context before any read that could be misread as prod.
+- After an approved rollout, verify with `rollout status`, then pod events and logs; report the real output.

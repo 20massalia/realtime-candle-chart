@@ -1,0 +1,58 @@
+---
+description: Next.js 16 App Router conventions and Spring Boot API integration patterns for the frontend
+globs: app/**/*.ts,app/**/*.tsx,components/**/*.tsx,lib/**/*.ts,stores/**/*.ts,proxy.ts
+alwaysApply: false
+---
+
+# Frontend (Next.js 16, App Router)
+
+## Component boundaries
+
+- Default to Server Components. `'use client'` is a last resort for state, effects, refs, or browser APIs.
+- Push `'use client'` to the leaf. Never mark a layout or page client just to render one interactive child.
+- Anything touching `window`, `document`, `localStorage`, or a canvas/chart library must be client-only, and imported with `dynamic(..., { ssr: false })` when it cannot render on the server.
+
+## Async request APIs
+
+```tsx
+// ✅ v16
+export default async function Page({
+  params,
+}: {
+  params: Promise<{ symbol: string }>;
+}) {
+  const { symbol } = await params;
+  const cookieStore = await cookies();
+}
+
+// ❌ pre-v15 shape — params is not a plain object anymore
+export default function Page({ params }: { params: { symbol: string } }) {}
+```
+
+## Talking to Spring Boot
+
+- Types come from the OpenAPI contract in `docs/specs/api/`. Do not hand-write a response interface that duplicates the contract.
+- Server-side calls use the internal service URL from `process.env` (server-only variable, no `NEXT_PUBLIC_` prefix).
+- Browser-visible calls go through a Route Handler in `app/api/` so tokens and internal hostnames never reach the client bundle.
+- Every fetch handles the non-200 path explicitly and surfaces a typed error; no bare `res.json()`.
+
+```ts
+const res = await fetch(`${process.env.BACKEND_URL}/api/v1/candles?symbol=${symbol}`, {
+  headers: { accept: 'application/json' },
+  cache: 'no-store',
+});
+if (!res.ok) throw new BackendError(`candles fetch failed: ${res.status}`);
+```
+
+## Real-time rendering
+
+- High-frequency data (ticks, socket messages) lives in a `useRef` queue — never in React state or Zustand.
+- Drain the queue only inside `requestAnimationFrame`. No `setInterval`/`setTimeout` for rendering.
+- Hold chart instances, series, and the live candle in refs, and pause producer plus consumer on `visibilitychange`.
+- Zustand holds UI state only (symbol, interval, toggles), never the tick stream.
+
+## Structure
+
+- Keep pure logic (aggregation, formatting, math) in `lib/` as pure functions with unit tests — no React imports.
+- TypeScript strict; no `any`, no non-null `!` to silence the compiler.
+- Verify with `pnpm typecheck && pnpm lint && pnpm test` before reporting done.

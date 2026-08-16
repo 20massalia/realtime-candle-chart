@@ -1,0 +1,98 @@
+---
+description: Core engineering guardrails for the Next.js + Spring Boot + PostgreSQL + Kubernetes stack, including the spec-driven workflow and the mandatory self-verification gate
+alwaysApply: true
+---
+
+# Global engineering rules
+
+## Repository layout
+
+| Path | Owns |
+| --- | --- |
+| `app/`, `components/`, `lib/`, `stores/` | Next.js frontend (App Router, repo root) |
+| `backend/` | Spring Boot service (Gradle, `com.portfolio.*`) |
+| `backend/src/main/resources/db/migration/` | Flyway SQL migrations (single source of schema truth) |
+| `infra/k8s/`, `infra/helm/` | Kubernetes manifests and Helm charts |
+| `docs/specs/` | Specs: `api/` contracts, `db/` schemas, `k8s/` deployment specs |
+
+Frontend lives at the repo root — do not assume a `frontend/` directory.
+
+## Spec-driven workflow (non-negotiable order)
+
+1. Read or write the spec in `docs/specs/` before touching code. No spec → write one from `docs/specs/_templates/`.
+2. Cross-boundary changes start from the API contract (`docs/specs/api/*.openapi.yaml`). The contract is the source of truth; frontend types and Spring controllers are derived from it, never the reverse.
+3. Write the failing test first, then the implementation.
+4. Run the verification gate below. A task is not "done" until it passes.
+5. Report what changed, what you verified, and what is still open.
+
+Ambiguity is a stop condition: ask instead of inventing requirements.
+
+## Tech stack rules
+
+**Next.js 16 (repo pins `next@16.2.2`) — App Router only**
+
+- App Router exclusively. Never create `pages/`.
+- Server Components are the default; add `'use client'` only for state, effects, or browser APIs.
+- `params`, `searchParams`, `cookies()`, `headers()`, and `draftMode()` are async — always `await` them.
+- Request interception goes in `proxy.ts` at the repo root. `middleware.ts` no longer exists in v16.
+- Never call the Spring Boot API directly from Client Components with secrets; go through Route Handlers or Server Components.
+- Read `node_modules/next/dist/docs/` before using an unfamiliar Next.js API — this major version differs from older training data.
+
+**Spring Boot (backend)**
+
+- Layering: `controller` → `service` → `repository`. Controllers stay thin, no business logic; repositories are never called from controllers.
+- Constructor injection only. No field `@Autowired`.
+- Web layer speaks DTOs (Java `record`). Never serialize JPA entities to JSON.
+- Validate input with `@Valid` on request DTOs; handle errors in one `@RestControllerAdvice`.
+- Configuration via `@ConfigurationProperties`; secrets only from environment variables.
+
+**PostgreSQL**
+
+- Every schema change is a new forward-only Flyway migration (`V{n}__{snake_case}.sql`). Never edit an applied migration.
+- `spring.jpa.hibernate.ddl-auto` stays `validate` (or `none`). Never `update` or `create-drop`.
+- JPA associations default to `FetchType.LAZY`; kill N+1 with fetch joins or `@EntityGraph`, not `EAGER`.
+- Timestamps are `timestamptz`, money is `numeric`, keys are `bigint`/`uuid`. No `float` for prices.
+- Index every foreign key and every column used for filtering or ordering.
+- Confirm the live schema through the `postgres` MCP server (read-only) instead of guessing column names.
+
+**Kubernetes**
+
+- Manifests are declarative and environment-parameterized (Kustomize overlays or Helm values). Never bake environment values into a base manifest.
+- Required on every workload: resource `requests`/`limits`, liveness and readiness probes, pinned image digest or immutable tag (never `:latest`), `securityContext` with `runAsNonRoot`.
+- Secrets come from a `Secret` or external secret store, never a literal in a manifest or ConfigMap.
+- Validate locally (`helm template`/`kustomize build` + `kubeconform`) before proposing any apply.
+- Cluster mutations (`apply`, `delete`, `scale`, `rollout restart`) require explicit user approval. Read-only inspection is always fine.
+
+## Mandatory self-verification gate
+
+Run what the change touches, quote the real output, and fix failures before reporting completion. Never claim a command passed without running it.
+
+```bash
+# Frontend (changed app/, components/, lib/, stores/)
+pnpm typecheck && pnpm lint && pnpm test
+pnpm test:e2e            # when UI behavior or a route changed
+
+# Backend (changed backend/)
+cd backend && ./gradlew test
+
+# Database (changed a migration)
+cd backend && ./gradlew flywayValidate   # or boot the app against a scratch DB
+
+# Kubernetes (changed infra/)
+kustomize build infra/k8s/overlays/<env> | kubeconform -strict -summary -
+helm lint infra/helm/<chart>
+```
+
+If a command is unavailable in this environment, say so explicitly and state what remains unverified. Silence is not a pass.
+
+## Safety
+
+- Never run `git commit`, `push`, `merge`, `rebase`, `tag`, or `gh pr create` unless the user asks for that exact action.
+- Never write to a database or mutate a cluster through MCP tools without explicit approval.
+- Never commit secrets, `.env` files, kubeconfigs, or tokens.
+- Keep diffs small and scoped; mention unrelated problems instead of fixing them.
+
+## Communication
+
+- Reply to the user in Korean; keep code, identifiers, commit prefixes, and log excerpts in English.
+- Close every task with: changed files, what changed, what to review, verification output, one suggested Conventional Commit message (English prefix, Korean description).

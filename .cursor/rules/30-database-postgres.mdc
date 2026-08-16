@@ -1,0 +1,47 @@
+---
+description: PostgreSQL schema, Flyway migration, and JPA mapping rules including time-series table conventions
+globs: backend/src/main/resources/db/migration/**/*.sql,**/*.sql,backend/**/entity/**/*.java,backend/**/repository/**/*.java,docs/specs/db/**/*.md
+alwaysApply: false
+---
+
+# Database (PostgreSQL + Flyway)
+
+## Migrations
+
+- Flyway is the only source of schema truth. `ddl-auto` stays `validate`; JPA never creates or alters a table.
+- Naming: `V{n}__{snake_case_description}.sql`, forward-only. An applied migration is immutable — fix mistakes with a new migration.
+- One logical change per migration file, with the rollback path described in a header comment when it is not trivially reversible.
+- Destructive steps (`DROP COLUMN`, type narrowing) ship as expand → migrate → contract across separate releases, never in one deploy.
+
+## Zero-downtime rules
+
+- Adding a `NOT NULL` column: add nullable → backfill in batches → set `NOT NULL`. Never add `NOT NULL` with a volatile default to a large table in one statement.
+- Create indexes on large tables with `CREATE INDEX CONCURRENTLY` (and keep that statement in its own migration, outside a transaction).
+- Long `ALTER TABLE` on a hot table needs an explicit `lock_timeout`; state the expected lock impact in the spec.
+
+## Types
+
+| Use case | Type |
+| --- | --- |
+| Surrogate key | `bigint GENERATED ALWAYS AS IDENTITY` or `uuid` |
+| Timestamp | `timestamptz` (store UTC, never `timestamp`) |
+| Price / money | `numeric(18, 8)` — never `float`/`double` |
+| Enum-like column | `text` + `CHECK`, or a lookup table |
+
+## Time-series (candles / ticks)
+
+- Natural key `(symbol, interval, bucket_start)` with a `UNIQUE` constraint; queries filter on it, so index in that column order.
+- Partition by time range once volume justifies it, and document the partition strategy in `docs/specs/db/`.
+- Upsert on ingest with `INSERT ... ON CONFLICT (symbol, interval, bucket_start) DO UPDATE` instead of read-then-write.
+
+## JPA
+
+- Associations are `FetchType.LAZY`. Solve N+1 with fetch joins, `@EntityGraph`, or a projection — never by switching to `EAGER`.
+- Read paths return interface or record projections, not entities.
+- Bulk writes use batching (`hibernate.jdbc.batch_size`) or plain JDBC; never loop `save()` per row.
+
+## Working with the live schema
+
+- Introspect through the `postgres` MCP server (`pg_list_tables`, `pg_describe_table`, `pg_explain`) instead of guessing names or reading stale docs.
+- MCP access is read-only by design: never ask it to run DDL or DML. Schema changes go through a migration file, reviewed by the user.
+- Before proposing an index, confirm the plan with `pg_explain` and check `pg_unused_indexes` so you are not stacking redundant indexes.
