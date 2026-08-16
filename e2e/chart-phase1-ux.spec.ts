@@ -3,7 +3,7 @@ import { buildCandleTooltipInnerHtml } from "../lib/chart/candle-tooltip-html";
 
 async function waitForChartHost(page: Page) {
   const host = page.getByTestId("chart-canvas-host");
-  await expect(host).toBeVisible();
+  await expect(host).toBeVisible({ timeout: 30_000 });
   await expect(host.locator("canvas").first()).toBeVisible({ timeout: 30_000 });
 }
 

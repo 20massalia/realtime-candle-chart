@@ -10,7 +10,7 @@ import {
   type Time,
   type UTCTimestamp,
 } from "lightweight-charts";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { buildCandleTooltipInnerHtml } from "@/lib/chart/candle-tooltip-html";
 import { formatAxisTimeLabel, formatKrw } from "@/lib/chart/formatters";
 import {
@@ -18,21 +18,32 @@ import {
   readTooltipSizeOnce,
   type TooltipSizeCache,
 } from "@/lib/chart/tooltip-layout";
-import { createAggregateState } from "@/lib/market/aggregate";
-import { createGbmState } from "@/lib/market/gbm";
-import { createConsumer } from "@/lib/market/consumer";
-import { createProducer } from "@/lib/market/producer";
-import { intervalMsForSpeed, SPEED_PRESETS } from "@/lib/market/speed";
-import type { Candle, Tick } from "@/lib/market/types";
+import {
+  canAppendAfterHistory,
+  CHART_INTERVAL,
+  CHART_SYMBOL,
+  toChartCandles,
+} from "@/lib/chart/db-sync";
+import type { Candle as ApiCandle } from "@/lib/api/candles";
+import {
+  buildCandleWebSocketUrl,
+  nextReconnectDelayMs,
+  parseCandleStreamEvent,
+  boundStreamQueue,
+  type CandleStreamEvent,
+} from "@/lib/api/candles-stream";
+import { createStreamConsumer } from "@/lib/chart/stream-consumer";
+import { barsForEffect, streamEventToEffects } from "@/lib/chart/stream-map";
+import { SPEED_PRESETS } from "@/lib/market/speed";
+import type { Candle } from "@/lib/market/types";
 import { useUiStore } from "@/stores/ui-store";
 
 type CandleSeriesApi = ISeriesApi<"Candlestick", Time>;
 
-/** Mock (√s) vol; ~300ms steps → σ√dt ≈ 0.03·0.55 ≈ 1.6% typical |Δlog S|. */
-const GBM = { mu: 0, sigma: 0.03 } as const;
-const TICK_INTERVAL_MS = 300;
-/** Realistic KRW mid-cap baseline (~₩75,000). GBM relative movements stay intact. */
-const INITIAL_PRICE = 75_000;
+export type CandleChartProps = {
+  initialCandles?: ApiCandle[];
+  hydrateError?: string | null;
+};
 
 function lwcBar(c: Candle) {
   return {
@@ -44,14 +55,19 @@ function lwcBar(c: Candle) {
   };
 }
 
-export function CandleChart() {
+const EMPTY_CANDLES: ApiCandle[] = [];
+
+export function CandleChart({
+  initialCandles = EMPTY_CANDLES,
+  hydrateError = null,
+}: CandleChartProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const seriesRef = useRef<CandleSeriesApi | null>(null);
-  const queueRef = useRef<Tick[]>([]);
-  const gbmRef = useRef(createGbmState(INITIAL_PRICE));
-  const aggRef = useRef(createAggregateState());
-  const lastTickMsRef = useRef<number | null>(null);
+  const queueRef = useRef<CandleStreamEvent[]>([]);
+  const [streamStatus, setStreamStatus] = useState<"connecting" | "live" | "offline">(
+    "connecting",
+  );
   const setChartReady = useUiStore((s) => s.setChartReady);
   const isPaused = useUiStore((s) => s.isPaused);
   const setPaused = useUiStore((s) => s.setPaused);
@@ -63,9 +79,8 @@ export function CandleChart() {
     if (!el) return;
 
     queueRef.current = [];
-    gbmRef.current = createGbmState(INITIAL_PRICE);
-    aggRef.current = createAggregateState();
-    lastTickMsRef.current = null;
+    const history = toChartCandles(initialCandles);
+    const lastHistoryTime = history[history.length - 1]?.time ?? null;
 
     const chart = createChart(el, {
       layout: {
@@ -108,6 +123,7 @@ export function CandleChart() {
         minMove: 1,
       },
     });
+    series.setData(history.map(lwcBar));
 
     // ── Custom tooltip (crosshairMove) ──────────────────────────────────────
     // position:relative is required so the tooltip's absolute coords are
@@ -195,71 +211,109 @@ export function CandleChart() {
     ro.observe(el);
     resize();
 
-    const producer = createProducer(
-      { queueRef, gbmRef, lastTickMsRef },
-      {
-        getIntervalMs: () =>
-          intervalMsForSpeed(
-            TICK_INTERVAL_MS,
-            useUiStore.getState().speedMultiplier,
-          ),
-        params: GBM,
-        isPaused: () => useUiStore.getState().isPaused,
-      },
-    );
-
-    const consumer = createConsumer(
-      { queueRef, aggRef },
-      {
-        onEffect(eff) {
-          const ser = seriesRef.current;
-          if (!ser) return;
-          if (eff.type === "update") {
-            ser.update(lwcBar(eff.candle));
-          } else {
-            ser.update(lwcBar(eff.completed));
-            ser.update(lwcBar(eff.candle));
+    const applyEvent = (event: CandleStreamEvent) => {
+      const ser = seriesRef.current;
+      if (!ser) return;
+      for (const effect of streamEventToEffects(event)) {
+        for (const bar of barsForEffect(effect)) {
+          if (!canAppendAfterHistory(lastHistoryTime, bar.time)) {
+            continue;
           }
-        },
-      },
-    );
-
-    const pauseAll = () => {
-      producer.stop();
-      consumer.stop();
+          ser.update(lwcBar(bar));
+        }
+      }
     };
 
-    const resumeAll = () => {
-      lastTickMsRef.current = null;
-      producer.start();
-      consumer.start();
+    const consumer = createStreamConsumer(
+      { queueRef },
+      {
+        onEvent: applyEvent,
+        isPaused: () => useUiStore.getState().isPaused,
+        isHidden: () => document.hidden,
+      },
+    );
+
+    let socket: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let attempts = 0;
+    let disposed = false;
+    let onClose: (() => void) | undefined;
+
+    const connect = () => {
+      if (disposed) return;
+      setStreamStatus("connecting");
+      const url = buildCandleWebSocketUrl({
+        baseUrl: process.env.NEXT_PUBLIC_CANDLE_WS_URL || undefined,
+        symbol: CHART_SYMBOL,
+        interval: CHART_INTERVAL,
+      });
+      socket = new WebSocket(url);
+      socket.addEventListener("open", () => {
+        attempts = 0;
+        setStreamStatus("live");
+      });
+      socket.addEventListener("message", (message) => {
+        try {
+          const payload: unknown = JSON.parse(String(message.data));
+          const parsed = parseCandleStreamEvent(payload);
+          queueRef.current.push(parsed);
+          queueRef.current = boundStreamQueue(queueRef.current, {
+            hidden: document.hidden,
+            paused: useUiStore.getState().isPaused,
+          });
+        } catch {
+          // Ignore malformed frames; keep the session.
+        }
+      });
+      onClose = () => {
+        if (disposed) return;
+        setStreamStatus("offline");
+        const delay = nextReconnectDelayMs(attempts);
+        attempts += 1;
+        reconnectTimer = setTimeout(connect, delay);
+      };
+      socket.addEventListener("close", onClose);
     };
 
     const onVisibility = () => {
       if (document.visibilityState === "hidden") {
-        pauseAll();
+        consumer.stop();
+        queueRef.current = boundStreamQueue(queueRef.current, {
+          hidden: true,
+          paused: useUiStore.getState().isPaused,
+        });
       } else {
-        resumeAll();
+        consumer.start();
       }
     };
 
     document.addEventListener("visibilitychange", onVisibility);
-    producer.start();
     consumer.start();
+    connect();
 
     return () => {
-      pauseAll();
+      disposed = true;
+      consumer.stop();
+      if (reconnectTimer !== undefined) {
+        clearTimeout(reconnectTimer);
+      }
+      if (socket) {
+        if (onClose) {
+          socket.removeEventListener("close", onClose);
+        }
+        socket.close();
+      }
       chart.unsubscribeCrosshairMove(handleCrosshair);
       document.removeEventListener("visibilitychange", onVisibility);
       ro.disconnect();
       chart.remove();
       tooltip.remove();
-      el.style.position = ""; // restore: was set to "relative" for tooltip coordinate system
+      el.style.position = "";
       chartRef.current = null;
       seriesRef.current = null;
       setChartReady(false);
     };
-  }, [setChartReady]);
+  }, [setChartReady, initialCandles]);
 
   return (
     <div className="flex w-full flex-col gap-3">
@@ -303,8 +357,19 @@ export function CandleChart() {
         >
           Realtime 이동
         </button>
-        <span className="text-sm text-zinc-500 dark:text-zinc-400">
-          Mock GBM · 1m 캔들 · RAF 소비
+        <span
+          data-testid="chart-hydrate-status"
+          className="text-sm text-zinc-500 dark:text-zinc-400"
+        >
+          {hydrateError
+            ? `hydrate skipped · ${hydrateError}`
+            : `hydrated ${initialCandles.length} · stream ${CHART_SYMBOL} 1m`}
+        </span>
+        <span
+          data-testid="chart-stream-status"
+          className="text-sm text-zinc-500 dark:text-zinc-400"
+        >
+          {streamStatus}
         </span>
       </div>
     </div>

@@ -1,10 +1,10 @@
 import { create } from "zustand";
 
 type UiState = {
-  /** When true, GBM producer stops enqueueing ticks (chart refs stay as-is). */
+  /** When true, the chart does not apply live stream events (socket stays open). */
   isPaused: boolean;
   setPaused: (isPaused: boolean) => void;
-  /** Producer speed multiplier (low-frequency UI state only). */
+  /** Speed preset UI only; server tick interval is fixed. */
   speedMultiplier: number;
   setSpeedMultiplier: (speedMultiplier: number) => void;
   chartReady: boolean;

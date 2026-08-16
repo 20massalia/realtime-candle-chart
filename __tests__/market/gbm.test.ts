@@ -12,7 +12,7 @@ describe("createGbmState", () => {
     expect(createGbmState(0.001).price).toBe(0.001);
   });
 
-  it("uses the Phase 1 chart baseline (~₩75,000) as a realistic positive mid price", () => {
+  it("uses the Samsung Electronics mock baseline (₩75,000) as a realistic positive mid price", () => {
     const s = createGbmState(75_000);
     expect(s.price).toBe(75_000);
     expect(Number.isFinite(s.price)).toBe(true);

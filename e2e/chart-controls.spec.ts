@@ -5,7 +5,7 @@ test.describe("chart controls", () => {
     await page.goto("/");
 
     await expect(
-      page.getByRole("heading", { name: "실시간 캔들 (Phase 1 Mock)" }),
+      page.getByRole("heading", { name: "실시간 캔들" }),
     ).toBeVisible();
 
     for (const label of ["0.5x", "1x", "2x", "5x"]) {
