@@ -1,0 +1,167 @@
+openapi: 3.1.0
+info:
+  title: Candles API
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080
+    description: Local Spring Boot
+paths:
+  /api/v1/candles:
+    get:
+      operationId: listCandles
+      summary: List OHLC candles for a symbol
+      description: >
+        Returns completed OHLC bars (newest `limit`, ascending `bucketStart`).
+        The home chart hydrates from GET `symbol=005930&interval=1m`.
+        `005930` is a reserved mock symbol: GET returns 200 and `candles: []`
+        when no rows exist (not 404). Other missing symbols stay 404.
+        Forming (in-progress) bars are not stored and are not returned.
+        Live forming/completed bars are pushed on `/ws/v1/candles` (006).
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema: { type: string, pattern: '^[A-Z0-9.]{1,10}$' }
+        - name: interval
+          in: query
+          required: true
+          schema: { type: string, enum: [1m, 5m, 1h, 1d] }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 200 }
+      responses:
+        '200':
+          description: Candles ordered by bucketStart ascending (most recent `limit` rows)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CandleListResponse' }
+        '400':
+          description: Invalid symbol, interval, or limit
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '404':
+          description: Unknown symbol
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+    post:
+      operationId: ingestCandles
+      summary: Upsert completed OHLC candles for a symbol
+      description: >
+        Upserts completed bars on `(symbol, interval, bucketStart)`.
+        The server mock engine upserts one `1m` bar on each GBM minute roll.
+        Clients must not POST forming bars. Manual ingest (verification page) remains.
+        Volume may be null.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CandleIngestRequest' }
+      responses:
+        '200':
+          description: All bars upserted on (symbol, interval, bucketStart)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CandleIngestResponse' }
+        '400':
+          description: Invalid body (symbol, interval, batch size, OHLC, duplicates, or parse error)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+        '500':
+          description: Unexpected server error
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+  /ws/v1/candles:
+    get:
+      operationId: subscribeCandleStream
+      summary: WebSocket upgrade for live 1m OHLC (mock GBM engine)
+      description: >
+        HTTP GET that upgrades to a WebSocket. Query must be `symbol=005930`
+        and `interval=1m` in this slice; otherwise the handshake is rejected.
+        The server sends JSON text frames (`CandleStreamEvent`).
+        `update` is the forming bar (not persisted). `roll` includes
+        `completed` (just closed, persisted) and `candle` (new forming bar).
+      parameters:
+        - name: symbol
+          in: query
+          required: true
+          schema: { type: string, pattern: '^[A-Z0-9.]{1,10}$' }
+        - name: interval
+          in: query
+          required: true
+          schema: { type: string, enum: [1m, 5m, 1h, 1d] }
+      responses:
+        '101':
+          description: Switching Protocols — WebSocket session
+        '400':
+          description: Invalid or unsupported symbol/interval for the mock stream
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ErrorResponse' }
+components:
+  schemas:
+    Candle:
+      type: object
+      required: [bucketStart, open, high, low, close]
+      properties:
+        bucketStart: { type: string, format: date-time }
+        open: { type: string, format: decimal }
+        high: { type: string, format: decimal }
+        low: { type: string, format: decimal }
+        close: { type: string, format: decimal }
+        volume: { type: integer, format: int64, nullable: true }
+    CandleListResponse:
+      type: object
+      required: [symbol, interval, candles]
+      properties:
+        symbol: { type: string }
+        interval: { type: string }
+        candles:
+          type: array
+          items: { $ref: '#/components/schemas/Candle' }
+    CandleIngestRequest:
+      type: object
+      required: [symbol, interval, candles]
+      properties:
+        symbol: { type: string, pattern: '^[A-Z0-9.]{1,10}$' }
+        interval: { type: string, enum: [1m, 5m, 1h, 1d] }
+        candles:
+          type: array
+          minItems: 1
+          maxItems: 500
+          items: { $ref: '#/components/schemas/Candle' }
+    CandleIngestResponse:
+      type: object
+      required: [symbol, interval, upserted]
+      properties:
+        symbol: { type: string }
+        interval: { type: string }
+        upserted: { type: integer, minimum: 1, maximum: 500 }
+    CandleStreamEvent:
+      type: object
+      required: [type, symbol, interval, candle]
+      properties:
+        type: { type: string, enum: [update, roll] }
+        symbol: { type: string }
+        interval: { type: string }
+        candle: { $ref: '#/components/schemas/Candle' }
+        completed:
+          allOf: [{ $ref: '#/components/schemas/Candle' }]
+          description: Required when type is roll; omitted on update
+          nullable: true
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string, example: INVALID_QUERY }
+        message: { type: string }
+        traceId: { type: string, nullable: true }
