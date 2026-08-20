@@ -1,0 +1,39 @@
+# Render Blueprint: Spring Boot API + PostgreSQL for Vercel frontend.
+# Deploy: Render Dashboard → New → Blueprint → connect this repo.
+services:
+  - type: web
+    name: realtime-candle-api
+    runtime: docker
+    plan: free
+    dockerfilePath: ./backend/Dockerfile
+    dockerContext: ./backend
+    healthCheckPath: /actuator/health/liveness
+    envVars:
+      - key: POSTGRES_HOST
+        fromDatabase:
+          name: candle-db
+          property: host
+      - key: POSTGRES_PORT
+        fromDatabase:
+          name: candle-db
+          property: port
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: candle-db
+          property: database
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: candle-db
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: candle-db
+          property: password
+      - key: CANDLE_WEBSOCKET_ALLOWED_ORIGINS
+        value: https://realtime-candle-chart.vercel.app,http://localhost:3000,http://127.0.0.1:3000
+
+databases:
+  - name: candle-db
+    plan: free
+    databaseName: candles
+    user: candles

@@ -93,6 +93,23 @@ BACKEND_URL=http://localhost:8080 pnpm dev
 
 `NEXT_PUBLIC_CANDLE_WS_URL`을 생략하면 브라우저는 `ws://localhost:8080/ws/v1/candles`를 사용합니다. 통합 테스트에서는 테스트 데이터가 mock 엔진에 의해 바뀌지 않도록 엔진을 비활성화합니다.
 
+## Vercel + Render 배포
+
+Vercel에는 Next.js만 올라가며, Spring Boot API와 PostgreSQL은 별도로 실행해야 합니다. 프론트는 서버에서 `BACKEND_URL`로 REST를 프록시하고, 브라우저는 `NEXT_PUBLIC_CANDLE_WS_URL`로 WebSocket에 직접 연결합니다.
+
+1. [Render Dashboard](https://dashboard.render.com/) → **New → Blueprint** → 이 저장소를 연결하고 `render.yaml`을 적용합니다. (`realtime-candle-api` 웹 서비스 + `candle-db` PostgreSQL)
+2. Blueprint 배포가 Ready가 되면 `https://realtime-candle-api.onrender.com/actuator/health/liveness`가 200을 반환하는지 확인합니다.
+3. Vercel 프로젝트에 아래 환경 변수를 설정합니다 (또는 저장소의 `.env.production`을 그대로 사용).
+
+```bash
+BACKEND_URL=https://realtime-candle-api.onrender.com
+NEXT_PUBLIC_CANDLE_WS_URL=wss://realtime-candle-api.onrender.com/ws/v1/candles
+```
+
+Render 서비스 이름을 바꾼 경우 위 URL과 `render.yaml`의 `CANDLE_WEBSOCKET_ALLOWED_ORIGINS`, `.env.production` 값을 함께 맞춰 주세요.
+
+- 데모: [https://realtime-candle-chart.vercel.app](https://realtime-candle-chart.vercel.app)
+
 ## 테스트
 
 프론트엔드의 타입, 린트, 단위 테스트와 브라우저 시나리오는 다음 명령으로 확인할 수 있습니다.

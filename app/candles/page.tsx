@@ -6,6 +6,7 @@ import {
   type CandleInterval,
 } from "@/lib/api/candles";
 import { CandleIngestForm } from "@/components/candles/CandleIngestForm";
+import { getBackendUrl } from "@/lib/env/server";
 
 export default async function CandlesPage({
   searchParams,
@@ -24,7 +25,7 @@ export default async function CandlesPage({
     : "1m";
   const limit = params.limit ? Number(params.limit) : 200;
 
-  const backendUrl = process.env.BACKEND_URL;
+  const backendUrl = getBackendUrl();
   let result:
     | { ok: true; data: Awaited<ReturnType<typeof fetchCandles>> }
     | { ok: false; message: string; code: string };

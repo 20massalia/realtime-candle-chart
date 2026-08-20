@@ -6,12 +6,13 @@ import {
   type Candle,
 } from "@/lib/api/candles";
 import { CHART_INTERVAL } from "@/lib/chart/db-sync";
+import { getBackendUrl } from "@/lib/env/server";
 
 async function loadChartHistory(): Promise<{
   candles: Candle[];
   hydrateError: string | null;
 }> {
-  const backendUrl = process.env.BACKEND_URL;
+  const backendUrl = getBackendUrl();
   if (!backendUrl) {
     return { candles: [], hydrateError: "BACKEND_URL is not set" };
   }

@@ -9,6 +9,7 @@ import {
   type Candle,
   type CandleIngestRequest,
 } from "@/lib/api/candles";
+import { getBackendUrl } from "@/lib/env/server";
 
 function backendUnavailable() {
   return NextResponse.json(
@@ -55,7 +56,7 @@ function upstreamError(error: unknown) {
 }
 
 export async function GET(request: Request) {
-  const backendUrl = process.env.BACKEND_URL;
+  const backendUrl = getBackendUrl();
   if (!backendUrl) {
     return backendUnavailable();
   }
@@ -148,7 +149,7 @@ function parseIngestBody(data: unknown): CandleIngestRequest | NextResponse {
 }
 
 export async function POST(request: Request) {
-  const backendUrl = process.env.BACKEND_URL;
+  const backendUrl = getBackendUrl();
   if (!backendUrl) {
     return backendUnavailable();
   }
