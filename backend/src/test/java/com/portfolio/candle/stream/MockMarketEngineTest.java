@@ -37,7 +37,7 @@ class MockMarketEngineTest {
     void setUp() {
         when(candleService.latestClose("005930", "1m")).thenReturn(Optional.empty());
         MockMarketProperties properties =
-                new MockMarketProperties(true, "005930", "1m", 300, 0, 0, 75_000);
+                new MockMarketProperties(true, "005930", "1m", 300, 0, 0, 0, 75_000);
         engine = new MockMarketEngine(properties, candleService, hub);
     }
 
@@ -88,5 +88,29 @@ class MockMarketEngineTest {
         assertThatCode(engine::scheduledTick).doesNotThrowAnyException();
         assertThatCode(engine::scheduledTick).doesNotThrowAnyException();
         verify(hub, times(2)).broadcast(any());
+    }
+
+    @Test
+    void startPriceIgnoresCollapsedLastClose() {
+        when(candleService.latestClose("005930", "1m")).thenReturn(Optional.of(new BigDecimal("150")));
+        MockMarketEngine crashed =
+                new MockMarketEngine(
+                        new MockMarketProperties(true, "005930", "1m", 300, 0, 0, 0.02, 75_000),
+                        candleService,
+                        hub);
+
+        assertThat(crashed.gbmState().price()).isEqualTo(75_000.0);
+    }
+
+    @Test
+    void startPriceUsesLastCloseNearTheMean() {
+        when(candleService.latestClose("005930", "1m")).thenReturn(Optional.of(new BigDecimal("76000")));
+        MockMarketEngine nearMean =
+                new MockMarketEngine(
+                        new MockMarketProperties(true, "005930", "1m", 300, 0, 0, 0.02, 75_000),
+                        candleService,
+                        hub);
+
+        assertThat(nearMean.gbmState().price()).isEqualTo(76_000.0);
     }
 }

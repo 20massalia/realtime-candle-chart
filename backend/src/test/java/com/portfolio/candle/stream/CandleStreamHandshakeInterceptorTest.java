@@ -25,7 +25,7 @@ class CandleStreamHandshakeInterceptorTest {
     @BeforeEach
     void setUp() {
         interceptor = new CandleStreamHandshakeInterceptor(
-                new MockMarketProperties(true, "005930", "1m", 300, 0, 0.03, 75_000),
+                new MockMarketProperties(true, "005930", "1m", 300, 0, 0.03, 0.02, 75_000),
                 new CandleWebSocketProperties(List.of("http://localhost:3000", "http://127.0.0.1:3000")));
     }
 

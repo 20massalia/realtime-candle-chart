@@ -33,6 +33,8 @@ import org.springframework.stereotype.Component;
 public class MockMarketEngine {
 
     private static final Logger log = LoggerFactory.getLogger(MockMarketEngine.class);
+    /** Last close outside [band, 1/band] × fallback is treated as a crashed path. */
+    private static final double START_PRICE_BAND = 0.5;
 
     private final MockMarketProperties properties;
     private final CandleService candleService;
@@ -67,7 +69,8 @@ public class MockMarketEngine {
     }
 
     public void tickAt(long nowMs, double dtSeconds, double z) {
-        GbmParams params = new GbmParams(properties.mu(), properties.sigma());
+        GbmParams params =
+                new GbmParams(properties.mu(), properties.sigma(), properties.kappa(), properties.fallbackPrice());
         GbmStep step = Gbm.step(gbmState, nowMs, dtSeconds, params, z);
         gbmState = step.state();
         lastTickMs = nowMs;
@@ -132,10 +135,12 @@ public class MockMarketEngine {
     }
 
     private double startPrice() {
+        double fallback = properties.fallbackPrice();
         return candleService
                 .latestClose(properties.symbol(), properties.interval())
                 .map(BigDecimal::doubleValue)
-                .orElse(properties.fallbackPrice());
+                .filter(price -> price >= fallback * START_PRICE_BAND && price <= fallback / START_PRICE_BAND)
+                .orElse(fallback);
     }
 
     static BigDecimal decimal(double value) {

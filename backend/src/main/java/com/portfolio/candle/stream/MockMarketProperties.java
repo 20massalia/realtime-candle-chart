@@ -10,4 +10,5 @@ public record MockMarketProperties(
         long tickIntervalMs,
         double mu,
         double sigma,
+        double kappa,
         double fallbackPrice) {}
