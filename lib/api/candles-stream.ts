@@ -84,14 +84,25 @@ export function drainStreamQueue(
   }
 }
 
-export function retainLatestEvent(
+/**
+ * Hidden/paused charts skip RAF drain, so the queue must stay small without
+ * dropping completed bars. Keep every `roll` in order and only the latest
+ * forming `update` after the last roll.
+ */
+export function coalesceIdleStreamQueue(
   queue: readonly CandleStreamEvent[],
 ): CandleStreamEvent[] {
-  const last = queue[queue.length - 1];
-  if (last === undefined) {
-    return [];
+  const rolls: CandleStreamEvent[] = [];
+  let latestUpdate: CandleStreamEvent | undefined;
+  for (const event of queue) {
+    if (event.type === "roll") {
+      latestUpdate = undefined;
+      rolls.push(event);
+    } else {
+      latestUpdate = event;
+    }
   }
-  return [last];
+  return latestUpdate === undefined ? rolls : [...rolls, latestUpdate];
 }
 
 export function boundStreamQueue(
@@ -99,7 +110,7 @@ export function boundStreamQueue(
   flags: { hidden: boolean; paused: boolean },
 ): CandleStreamEvent[] {
   if (flags.hidden || flags.paused) {
-    return retainLatestEvent(queue);
+    return coalesceIdleStreamQueue(queue);
   }
   return [...queue];
 }

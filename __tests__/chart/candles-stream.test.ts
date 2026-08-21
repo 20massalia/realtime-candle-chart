@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   buildCandleWebSocketUrl,
   boundStreamQueue,
+  coalesceIdleStreamQueue,
   drainStreamQueue,
   nextReconnectDelayMs,
   parseCandleStreamEvent,
-  retainLatestEvent,
 } from "@/lib/api/candles-stream";
 import { barsForEffect, streamEventToEffects } from "@/lib/chart/stream-map";
 
@@ -26,6 +26,43 @@ const completed = {
   close: "75000.00000000",
   volume: null,
 };
+
+const formingNext = {
+  bucketStart: "2026-08-17T01:02:00Z",
+  open: "75050.00000000",
+  high: "75150.00000000",
+  low: "75000.00000000",
+  close: "75120.00000000",
+  volume: null,
+};
+
+const completedNext = {
+  bucketStart: "2026-08-17T01:01:00Z",
+  open: "75000.00000000",
+  high: "75100.00000000",
+  low: "74950.00000000",
+  close: "75080.00000000",
+  volume: null,
+};
+
+function updateEvent(candle = forming) {
+  return parseCandleStreamEvent({
+    type: "update",
+    symbol: "005930",
+    interval: "1m",
+    candle,
+  });
+}
+
+function rollEvent(completedBar = completed, formingBar = forming) {
+  return parseCandleStreamEvent({
+    type: "roll",
+    symbol: "005930",
+    interval: "1m",
+    candle: formingBar,
+    completed: completedBar,
+  });
+}
 
 describe("parseCandleStreamEvent", () => {
   it("accepts an OpenAPI update fixture with decimal strings", () => {
@@ -132,63 +169,63 @@ describe("drainStreamQueue", () => {
   });
 });
 
-describe("retainLatestEvent", () => {
-  it("keeps only the last event when hidden", () => {
-    const a = parseCandleStreamEvent({
-      type: "update",
-      symbol: "005930",
-      interval: "1m",
-      candle: forming,
-    });
-    const b = parseCandleStreamEvent({
-      type: "update",
-      symbol: "005930",
-      interval: "1m",
-      candle: { ...forming, close: "75100.00000000" },
-    });
-    expect(retainLatestEvent([a, b])).toEqual([b]);
+describe("coalesceIdleStreamQueue", () => {
+  it("keeps only the latest forming update", () => {
+    const a = updateEvent(forming);
+    const b = updateEvent({ ...forming, close: "75100.00000000" });
+    expect(coalesceIdleStreamQueue([a, b])).toEqual([b]);
+  });
+
+  it("keeps completed rolls and the latest forming update after them", () => {
+    const firstUpdate = updateEvent(forming);
+    const firstRoll = rollEvent(completed, forming);
+    const midUpdate = updateEvent({ ...forming, close: "75100.00000000" });
+    const secondRoll = rollEvent(completedNext, formingNext);
+    const lastUpdate = updateEvent({ ...formingNext, close: "75180.00000000" });
+    expect(
+      coalesceIdleStreamQueue([
+        firstUpdate,
+        firstRoll,
+        midUpdate,
+        secondRoll,
+        lastUpdate,
+      ]),
+    ).toEqual([firstRoll, secondRoll, lastUpdate]);
+  });
+
+  it("drops forming updates that a later roll completes", () => {
+    const firstRoll = rollEvent(completed, forming);
+    const staleUpdate = updateEvent({ ...forming, close: "75100.00000000" });
+    const secondRoll = rollEvent(completedNext, formingNext);
+    expect(coalesceIdleStreamQueue([firstRoll, staleUpdate, secondRoll])).toEqual(
+      [firstRoll, secondRoll],
+    );
   });
 });
 
 describe("boundStreamQueue", () => {
   it("keeps the full queue while the chart is draining", () => {
-    const a = parseCandleStreamEvent({
-      type: "update",
-      symbol: "005930",
-      interval: "1m",
-      candle: forming,
-    });
-    const b = parseCandleStreamEvent({
-      type: "update",
-      symbol: "005930",
-      interval: "1m",
-      candle: { ...forming, close: "75100.00000000" },
-    });
+    const a = updateEvent(forming);
+    const b = updateEvent({ ...forming, close: "75100.00000000" });
     expect(boundStreamQueue([a, b], { hidden: false, paused: false })).toEqual([
       a,
       b,
     ]);
   });
 
-  it("keeps only the last event when paused or hidden", () => {
-    const a = parseCandleStreamEvent({
-      type: "update",
-      symbol: "005930",
-      interval: "1m",
-      candle: forming,
-    });
-    const b = parseCandleStreamEvent({
-      type: "update",
-      symbol: "005930",
-      interval: "1m",
-      candle: { ...forming, close: "75100.00000000" },
-    });
-    expect(boundStreamQueue([a, b], { hidden: false, paused: true })).toEqual([
-      b,
-    ]);
-    expect(boundStreamQueue([a, b], { hidden: true, paused: false })).toEqual([
-      b,
-    ]);
+  it("coalesces the idle queue when paused or hidden", () => {
+    const firstRoll = rollEvent(completed, forming);
+    const staleUpdate = updateEvent({ ...forming, close: "75100.00000000" });
+    const secondRoll = rollEvent(completedNext, formingNext);
+    const lastUpdate = updateEvent({ ...formingNext, close: "75180.00000000" });
+    const idle = [firstRoll, staleUpdate, secondRoll, lastUpdate];
+    const expected = [firstRoll, secondRoll, lastUpdate];
+    expect(boundStreamQueue(idle, { hidden: false, paused: true })).toEqual(
+      expected,
+    );
+    expect(boundStreamQueue(idle, { hidden: true, paused: false })).toEqual(
+      expected,
+    );
   });
 });
 

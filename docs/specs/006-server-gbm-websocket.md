@@ -42,8 +42,8 @@
 | P9 | Origin allowlist (`http://localhost:3000`, `http://127.0.0.1:3000`). Origin 없는 핸드셰이크(테스트 클라이언트)는 허용. |
 | P10 | 홈 차트는 `createProducer`/`applyTick`을 호출하지 않고 roll을 POST하지 않는다. |
 | P11 | 소켓 메시지는 `useRef` 큐 + RAF drain. React state에 스트림을 넣지 않는다. |
-| P12 | 일시정지는 **로컬**: drain이 `series.update`를 건너뛴다. 소켓은 유지. **큐는 hidden과 같이 최근 이벤트만 남긴다.** 속도 프리셋은 UI만 (서버 틱 주기 불변). |
-| P13 | 탭 hidden: 소켓 유지, drain 중지, 큐는 최근 이벤트만 남긴다 (메모리). |
+| P12 | 일시정지는 **로컬**: drain이 `series.update`를 건너뛴다. 소켓은 유지. **큐는 hidden과 같이 `roll`(완료 봉)은 모두 남기고, 형성 중 `update`는 마지막 roll 이후 최신 1개만 남긴다.** 속도 프리셋은 UI만 (서버 틱 주기 불변). |
+| P13 | 탭 hidden: 소켓 유지, drain 중지. 큐는 완료 봉(`roll`)을 유지하고 같은 분의 `update`만 최신 1개로 압축한다 (메모리). |
 | P14 | 소켓 close/error → 짧은 backoff 재연결. 실패해도 차트·히스토리는 유지. |
 | P15 | `time` ≤ 마지막 hydrate `time`인 라이브 봉은 `series.update` 생략 (LWC 단조 + 히스토리 덮어쓰기 방지). |
 | P16 | 통합 테스트에서 엔진이 시드를 오염시키지 않도록 `candle.mock-market.enabled=false`를 IT 기본으로 둔다. 로컬 `bootRun`은 enabled. |
@@ -127,4 +127,8 @@ Shipped as specified. Backend `./gradlew test` 36 passed. Frontend Vitest 67 pas
 - Scheduler tick failures are logged and the next tick still runs (`ScheduledExecutorService` otherwise stops forever).
 - Rejected WS handshakes set HTTP 400 (not a bare `false` that became 200).
 - Paused charts bound the stream queue to the latest event, same as hidden tabs.
+
+## Amendment (2026-08-21) — idle queue keeps completed bars
+
+Hidden/paused charts still skip RAF drain, but `boundStreamQueue` no longer drops `roll` events. Idle coalescing keeps every completed bar in order and only the latest forming `update` after the last roll, so returning to the tab does not skip minutes.
 
