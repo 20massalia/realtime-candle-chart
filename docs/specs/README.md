@@ -38,5 +38,6 @@ A spec is a record of a decision, not a wiki page. Do not silently rewrite an `A
 | [`004-samsung-mock-fixture.md`](004-samsung-mock-fixture.md) — mock/시드 심볼 `005930` (삼성전자), 외부 시세 없음 | Done |
 | [`005-chart-hydrate-roll-persist.md`](005-chart-hydrate-roll-persist.md) — 홈 차트 GET hydrate + GBM roll POST | Done (live path superseded by 006) |
 | [`006-server-gbm-websocket.md`](006-server-gbm-websocket.md) — 서버 GBM/1m 집계 + WebSocket 스트림 | Done |
+| [`007-github-actions-ci.md`](007-github-actions-ci.md) — GitHub Actions CI 게이트 | Done |
 
 Phase 1 predates this directory and stays where it is because `docs/prompts/task-template.md` references that path.

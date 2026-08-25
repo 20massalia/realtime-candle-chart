@@ -1,0 +1,198 @@
+# Local verification gate, run on every PR / main push.
+# Manual dispatch supports the 5-day timing experiment (cache on/off).
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      use_cache:
+        description: Use pnpm and Gradle caches. Turn off for uncached baseline timing.
+        type: boolean
+        default: true
+      run_e2e:
+        description: Run Playwright (skips @needs-api ingest; no live backend in this job)
+        type: boolean
+        default: true
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  actions: read
+
+env:
+  NODE_VERSION: "20"
+  JAVA_VERSION: "21"
+  PNPM_VERSION: "9"
+  KUBECTL_VERSION: "v1.31.4"
+  KUBECONFORM_VERSION: "v0.6.7"
+
+jobs:
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node (cached)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Setup Node (no cache)
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.use_cache }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm test -- --reporter=default --reporter=json --outputFile=vitest-results.json
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vitest-results
+          path: vitest-results.json
+          if-no-files-found: ignore
+
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Java (cached)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Setup Java (no cache)
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.use_cache }}
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+
+      - name: Run Gradle tests
+        working-directory: backend
+        run: |
+          chmod +x gradlew
+          ./gradlew test --no-daemon
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: junit-results
+          path: backend/build/test-results/test/*.xml
+          if-no-files-found: ignore
+
+  k8s:
+    name: k8s
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: azure/setup-kubectl@v4
+        with:
+          version: ${{ env.KUBECTL_VERSION }}
+
+      - name: Install kubeconform
+        run: |
+          curl -fsSL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" \
+            | tar -xz -C /usr/local/bin kubeconform
+          command -v kubeconform
+
+      - name: Render and schema-validate overlays/dev
+        run: kubectl kustomize infra/k8s/overlays/dev | kubeconform -strict -summary -
+
+  e2e:
+    name: e2e
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.run_e2e }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node (cached)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Setup Node (no cache)
+        if: ${{ github.event_name == 'workflow_dispatch' && !inputs.use_cache }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - name: Playwright (no live API)
+        env:
+          CI: true
+          PLAYWRIGHT_WEBSERVER_MODE: start
+        run: pnpm test:e2e -- --grep-invert @needs-api
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-output
+          path: |
+            test-results/
+            playwright-report/
+          if-no-files-found: ignore
+
+  metrics:
+    name: metrics
+    needs: [frontend, backend, k8s, e2e]
+    if: ${{ always() && !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Record job timings
+        env:
+          GH_TOKEN: ${{ github.token }}
+          USE_CACHE: ${{ github.event_name != 'workflow_dispatch' && 'true' || inputs.use_cache }}
+        run: |
+          {
+            echo "## CI timings"
+            echo
+            echo "- event: \`${{ github.event_name }}\`"
+            echo "- ref: \`${{ github.sha }}\`"
+            echo "- cache: \`${USE_CACHE}\`"
+            echo
+            echo "| job | conclusion | duration_s |"
+            echo "| --- | --- | ---: |"
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}/jobs" \
+              --jq '
+                .jobs[]
+                | select(.name != "metrics")
+                | select(.status == "completed")
+                | .duration = ((.completed_at | fromdateiso8601) - (.started_at | fromdateiso8601))
+                | "| \(.name) | \(.conclusion) | \(.duration) |"
+              '
+          } >> "$GITHUB_STEP_SUMMARY"

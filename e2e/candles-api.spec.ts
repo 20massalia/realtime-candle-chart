@@ -14,7 +14,9 @@ test.describe("candles verification page", () => {
     await expect(page.getByText(/005930/).first()).toBeVisible();
   });
 
-  test("upserts a bar through the ingest form", async ({ page }) => {
+  test("upserts a bar through the ingest form", { tag: "@needs-api" }, async ({
+    page,
+  }) => {
     await page.goto("/candles");
     await expect(page.getByTestId("candle-ingest-form")).toBeVisible();
 

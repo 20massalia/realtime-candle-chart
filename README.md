@@ -126,6 +126,20 @@ cd backend
 ./gradlew test
 ```
 
+PR과 `main` push에서는 같은 게이트가 [GitHub Actions](.github/workflows/ci.yml)에서 병렬로 돌아갑니다 (`frontend` / `backend` / `k8s` / `e2e`). ingest E2E(`@needs-api`)는 CI에 백엔드가 없어 제외합니다. 런이 끝나면 Summary에 job별 초 단위 시간이 남습니다.
+
+캐시 전후 시간을 재려면 Actions 탭에서 **Run workflow**를 쓰거나:
+
+```bash
+# 캐시 없는 베이스라인
+gh workflow run ci.yml -f use_cache=false -f run_e2e=true
+
+# 캐시 사용 (기본값과 동일)
+gh workflow run ci.yml -f use_cache=true -f run_e2e=true
+```
+
+같은 커밋으로 각 조건을 여러 번 돌린 뒤, 첫 런(의존성 워밍)은 버리고 p50을 비교하면 됩니다. Required checks에는 먼저 `frontend`, `backend`, `k8s`를 걸고, e2e가 안정이면 추가하세요.
+
 ## 로컬 Kubernetes
 
 로컬 클러스터에서는 PostgreSQL과 Spring Boot API만 실행하고, Next.js는 호스트에서 실행합니다. 개발 overlay는 Docker Desktop Kubernetes와 kind `candle-dev`를 지원합니다.
@@ -159,5 +173,6 @@ kubectl kustomize infra/k8s/overlays/dev | kubeconform -strict -summary -
 - [`docs/specs/004-samsung-mock-fixture.md`](docs/specs/004-samsung-mock-fixture.md): `005930` mock 기준 통일
 - [`docs/specs/005-chart-hydrate-roll-persist.md`](docs/specs/005-chart-hydrate-roll-persist.md): DB 히스토리 hydrate
 - [`docs/specs/006-server-gbm-websocket.md`](docs/specs/006-server-gbm-websocket.md): 서버 GBM과 WebSocket 스트림
+- [`docs/specs/007-github-actions-ci.md`](docs/specs/007-github-actions-ci.md): GitHub Actions CI 게이트
 
 현재까지 REST 조회·저장, 서버 mock engine, WebSocket 스트리밍, 로컬 Kubernetes 구성을 마쳤습니다. 다음 단계에서는 심볼과 인터벌을 확장하고, 외부 시세 연동이나 인증·재시도 정책, Ingress/TLS 같은 운영 환경의 문제를 다룰 수 있습니다.
