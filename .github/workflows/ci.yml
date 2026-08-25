@@ -28,7 +28,6 @@ permissions:
 env:
   NODE_VERSION: "20"
   JAVA_VERSION: "21"
-  PNPM_VERSION: "9"
   KUBECTL_VERSION: "v1.31.4"
   KUBECONFORM_VERSION: "v0.6.7"
 
@@ -41,8 +40,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node (cached)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
@@ -133,8 +130,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node (cached)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
