@@ -37,29 +37,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
 
       - name: Setup Node (cached)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Setup Node (no cache)
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.use_cache }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm typecheck
       - run: pnpm lint
-      - run: pnpm test -- --reporter=default --reporter=json --outputFile=vitest-results.json
+      - run: pnpm exec vitest run --reporter=default --reporter=json --outputFile=vitest-results.json
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: vitest-results
@@ -71,11 +71,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Setup Java (cached)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -83,7 +83,7 @@ jobs:
 
       - name: Setup Java (no cache)
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.use_cache }}
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: ${{ env.JAVA_VERSION }}
@@ -94,7 +94,7 @@ jobs:
           chmod +x gradlew
           ./gradlew test --no-daemon
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: always()
         with:
           name: junit-results
@@ -106,7 +106,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: azure/setup-kubectl@v4
         with:
@@ -127,20 +127,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: pnpm/action-setup@v4
 
       - name: Setup Node (cached)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.use_cache }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
 
       - name: Setup Node (no cache)
         if: ${{ github.event_name == 'workflow_dispatch' && !inputs.use_cache }}
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: ${{ env.NODE_VERSION }}
 
@@ -150,9 +150,9 @@ jobs:
         env:
           CI: true
           PLAYWRIGHT_WEBSERVER_MODE: start
-        run: pnpm test:e2e -- --grep-invert @needs-api
+        run: pnpm test:e2e:ci
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: playwright-output

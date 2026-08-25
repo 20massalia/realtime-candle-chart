@@ -25,7 +25,7 @@
 | --- | --- |
 | P1 | Job 이름 `frontend`, `backend`, `k8s`, `e2e`, `metrics`는 Required checks용으로 고정한다. |
 | P2 | k8s job은 `kubectl kustomize infra/k8s/overlays/dev \| kubeconform -strict -summary -`만 수행한다. 클러스터 없음. |
-| P3 | e2e는 `PLAYWRIGHT_WEBSERVER_MODE=start`로 Next를 빌드해 띄운다. `@needs-api` ingest는 grep-invert로 제외한다. |
+| P3 | e2e는 `PLAYWRIGHT_WEBSERVER_MODE=start`와 `pnpm test:e2e:ci`로 돌린다. `@needs-api` ingest는 제외한다. |
 | P4 | PR concurrency는 같은 PR의 이전 런만 cancel한다. `workflow_dispatch`는 측정용으로 cancel하지 않는다. |
 | P5 | `workflow_dispatch.use_cache=false`이면 Node/Java setup에서 `cache`를 넣지 않는다. |
 

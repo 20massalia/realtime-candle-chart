@@ -5,10 +5,17 @@ import {
   applyTick,
   type AggregateEffect,
 } from "@/lib/market/aggregate";
+import type { Candle } from "@/lib/market/types";
 
 // Helpers
 const MIN1_MS = 60_000; // tick at t=60s → minuteStartSec=60
 const MIN2_MS = 120_000;
+
+function updateEffect(e: readonly AggregateEffect[]) {
+  const ef = e[0];
+  if (ef.type !== "update") throw new Error("expected update effect");
+  return ef;
+}
 
 function rollEffect(e: readonly AggregateEffect[]) {
   const ef = e[0];
@@ -60,7 +67,7 @@ describe("applyTick — first tick", () => {
     expect(effects).toHaveLength(1);
     expect(effects[0].type).toBe("update");
 
-    const { candle } = effects[0] as { type: "update"; candle: any };
+    const { candle }: { candle: Candle } = updateEffect(effects);
     expect(candle).toMatchObject({
       time: 60,
       open: 100,
